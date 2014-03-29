@@ -230,7 +230,7 @@ To deal with these problems. Our solution to CUDA Counterexample Generation is t
     \item We utilize the CUDA Dynamic Parallelism to dynamically fork Child threads to fit the changing of tasks. We build a dynamic Parent-Child relationship.
     \item We build a Three-Level Queue Management proposal to fit the dynamic parallelism and dynamic task expanding.The three-level is made up of two physical level and a virtual level.
     \item We build a Two-level Dynamic Task Schedule to fit the dynamic Parent-Child relationship control and load balance.
-    \item We utilize the hierarchical Memory in GPU to do the Two-Level Path Recording.
+    \item We utilize the hierarchical Memory in GPU to do the Two-Level Path Recording and intra SM duplicate elimination.
 \end{itemize}
 We present the design of our algorithm in Algorithm 1, Algorithm 2 and Algorithm 3: Algorithm 1 propose the \textsl{CudaParentPathGeneration} Algorithm. It is the kernel launched by host.
 It contains the initial steps of Path Generation and will finish a certain amount of BFS-related tasks. It major focus on the Parent-level task schedule, Queue Management, fork
@@ -320,7 +320,9 @@ Algorithm 2 propose the \textsl{CudaChildPathGeneration} Algorithm. It is the ke
                                 \STATE $BREAK$;
                             \ENDIF
 		             \STATE \BFS{}, $OutgoingRelation \Rightarrow NEXT level$;
-		             \STATE Path\-Recording:$Inherit\&Update(path\_record\_queue of each Node)$;
+		             \STATE $IFDuplicate$ \Leftarrow Path\-Recording:$Inherit\&Update(path\_record\_queue of each Node)$;
+                            \IF {$IFDuplicate == TRUE$}
+                                \STATE CONTINUE;
 		             \STATE Three\-levelQM:$S\_queue.ParallelEnqueue()$;
 	            \ENDIF
                 \STATE Intra\_block\_syn();
@@ -392,7 +394,7 @@ We show the relationship in \ref{}, The \textsl{Parent-Child} relationship is no
     \label{fig:PCRelation}
 \end{figure}
 
-Beside the total tasks overload in \textsl{Child}, when the \textsl{generated path} in any thread in \textsl{Child} reach the SCC\\ACC ($$SCCnodelist\\Accnodelist \cup Nodelist\_in\_path \neq \emptyset$$), all threads in \textsl{Child} should synchronize and ``return'' result to \textsl{Parent}. As we mentioned in section XXX, The only way of communication between \textsl{Parent} and \textsl{Child}, as well as among \textsl{Childblocks} is on \textsl{Global Memory}, so the thread that find SCC-reach will record the generated path and a mark in \textsl{Global Memory} then synchronise among all Child blocks. As a result, \textsl{Parent} will got the mark and result and exit the execution.
+Beside the total tasks overload in \textsl{Child}, when the \textsl{generated path} in any thread in \textsl{Child} reach the SCC\\ACC ($SCCnodelist\\Accnodelist \cup Nodelist_in_path \neq \emptyset$), all threads in \textsl{Child} should synchronize and ``return'' result to \textsl{Parent}. As we mentioned in section XXX, The only way of communication between \textsl{Parent} and \textsl{Child}, as well as among \textsl{Childblocks} is on \textsl{Global Memory}, so the thread that find SCC-reach will record the generated path and a mark in \textsl{Global Memory} then synchronise among all Child blocks. As a result, \textsl{Parent} will got the mark and result and exit the execution.
 
 In total, The \textsl{Parent-Child} relationship is dynamic according to the task overload and SCC Reach. This is very flexible and can fully utilize the dynamic parallelism.It makes our CUDA Path Generation a on-the-fly algorithm.
 %
@@ -406,9 +408,9 @@ As we mentioned in \ref{}, the architecture of Memory in GPU contains Global mem
     \label{fig:DQM}
 \end{figure}
 
-The first level queue is stored in Shared Memory, marked as \textsl{S\_Queue}, It is shared among blocks in 1 SM. The second level queue is stored in Global Memory, marked as \textsl{G\_Queue}. The third level queue is also stored in Global Memory, called Virtual Global Queue, marked as \textsl{V\_G\_Queue}. 
+The first level queue is stored in Shared Memory, marked as \textsl{S\_Queue}, It is shared among blocks in 1 SM. The second level queue is stored in Global Memory, marked as \textsl{G\_Queue}. The third level queue is also stored in Global Memory, called Virtual Global Queue, marked as \textsl{V\_G\_Queue}.
 
-\textsl{S\_Queue} is the first task storage queue. When the BFS-related path generation begin, the expanded node ID will firstly be pushed into the \textsl{S_Queue} in corresponding SM. Then for the next level expanding, threads do not need to visit Global Memory, it improve the data access speed. Here, the problem is it may cause read\/write conflict when parallel threads write/read at the same time. Then if we set lock or use atomic operation to prevent conflict, it will cost much with frequently write request at the same time. So based on the GPU SM architecture and new Warp schedule in GK110,we build the lock-free \textsl{S_Queue} in structure showed in \ref{}. As mentioned, the kernel is actually executed in groups of 32 threads,called a \textsl{warp}. In GK110, it can support 4 \textsl{warps} executing at the same time in reality. So for each block, we make the \textsl{S_Queue} a four queue-group with 32 queues each. So even the threads executed in a SM is much more than 4 \textsl{warps}, the number to write into queue at the same time is limited. \textsl{S_Queue} is the queue directly accessed by threads during execution. As one thread only hold 1 task in each level search, if the tasks in \textsl{S_Queue} exceed the number of threads executed in one block, the tasks should be re-scheduled and then it need to be transferred to \textsl{G_Queue} in Global Memory. 
+\textsl{S\_Queue} is the first task storage queue. When the BFS-related path generation begin, the expanded node ID will firstly be pushed into the \textsl{S_Queue} in corresponding SM. Then for the next level expanding, threads do not need to visit Global Memory, it improve the data access speed. Here, the problem is it may cause read\/write conflict when parallel threads write/read at the same time. Then if we set lock or use atomic operation to prevent conflict, it will cost much with frequently write request at the same time. So based on the GPU SM architecture and new Warp schedule in GK110,we build the lock-free \textsl{S_Queue} in structure showed in \ref{}. As mentioned, the kernel is actually executed in groups of 32 threads,called a \textsl{warp}. In GK110, it can support 4 \textsl{warps} executing at the same time in reality. So for each block, we make the \textsl{S_Queue} a four queue-group with 32 queues each. So even the threads executed in a SM is much more than 4 \textsl{warps}, the number to write into queue at the same time is limited. \textsl{S_Queue} is the queue directly accessed by threads during execution. As one thread only hold 1 task in each level search, if the tasks in \textsl{S_Queue} exceed the number of threads executed in one block, the tasks should be re-scheduled and then it need to be transferred to \textsl{G_Queue} in Global Memory.
 
 \begin{figure}
     \vspace{2.5cm}
@@ -416,7 +418,7 @@ The first level queue is stored in Shared Memory, marked as \textsl{S\_Queue}, I
     \label{fig:SQueue}
 \end{figure}
 
-\textsl{G_Queue} is build at the first time \textsl{Parent} call \textsl{Child}, it is a group of array. As dynamic allocate memeory and visit global memory is costly, this queue won't change after being build. As Global Memory is the way \textsl{Parent} communicate with \textsl{Child},it work as the way to transfer tasks to \textsl{Child} when the first time launching \textsl{Child}. Then in following execution, it stores the tasks when blocks overload and copy the content in \textsl{S_Queue} to it. It is only visible for writing and threads will never directly read from it. The way to write \textsl{G_Queue} is shown in \ref{}. 
+\textsl{G_Queue} is build at the first time \textsl{Parent} call \textsl{Child}, it is a group of array. As dynamic allocate memeory and visit global memory is costly, this queue won't change after being build. As Global Memory is the way \textsl{Parent} communicate with \textsl{Child},it work as the way to transfer tasks to \textsl{Child} when the first time launching \textsl{Child}. Then in following execution, it stores the tasks when blocks overload and copy the content in \textsl{S_Queue} to it. It is only visible for writing and threads will never directly read from it. The way to write \textsl{G_Queue} is shown in \ref{}.
 
 \begin{figure}
 	\vspace{2.5cm}
@@ -424,21 +426,39 @@ The first level queue is stored in Shared Memory, marked as \textsl{S\_Queue}, I
 	\label{fig:GQueue}
 \end{figure}
 
-The Virtual Global Queue is the third level and it is a pointer array. As shown in \ref{}, in global view, the tasks store in the \textsl{G_Queue} is not continous. So it is not convenient for tasks reschedule as it will request a lot of computing on the range of tasks for each thread. Then \textsl{V_G_Queue} is to build a continuous list for task schedule. It is only visible for reading by threads. And only \textsl{V_G_Queue} is dynamic built during execution. It can be shown in \ref{}. I
+The Virtual Global Queue is the third level and it is a pointer array. As shown in \ref{}, in global view, the tasks store in the \textsl{G_Queue} is not continuous. So it is not convenient for tasks reschedule as it will request a lot of computing on the task range for each thread. Then \textsl{V_G_Queue} is to build a continuous list for task schedule. It is only visible for reading by threads. And only \textsl{V_G_Queue} is dynamic built during execution. It can be shown in \ref{}. 
 
 \begin{figure}
 	\vspace{2.5cm}
 	\caption{}
 	\label{fig:VGQueue}
 \end{figure}
+
+This three-level Queue follows the rules of dynamic parallelism, aiming at building a flexible way of data access and improving the performance. It can work well with the \textsl{Parent-Child} structure.
 %
 \subsection{Dynamic Two-level Task Schedule}
 %
-Inter Child blocks, Parent reallocate. should move the size of child part in p-c to this part.
-To make a compromise, in operation line X in our algorithm, when calculating the \textsl{Childsize-Child blocks number}, we guarantee that tasks allocated to each Child should not beyond the number $\textsl{warpsize = 32}$ and the threads number in each \textsl{Child block} should be $$warpsize\times\alpha$$.
+In previous sections, what we mentioned contains two conditions that program need to do task reschedule:
+   \begin{itemize}
+        \item{when \textsl{Parent} finish some initial steps of BFS-related path generation and can not hold more tasks, it need to call \textsl{Child} and schedule tasks to \textsl{Child} the first time.
+        \item{when the whole tasks make \textsl{Child} blocks overloaded, it need to return to \textsl{Parent} to rearrange the \{Child} grid so as to reschedule the tasks}
+   \end{itemize}
+
+In this two conditions, tasks schedule is done by \textsl{Parent}. And launching kernel is a cost work. If just one or a few blocks in \textsl{Child} is overloaded, it is obviously that the execution should not return to \textsl{Parent}. Instead, inside the \textsl{Child}, it should also have a \textsl{Child level inter blocks} task schedule. That, combined with the \textsl{Parent} level task schedule, we build the two-level task schedule. It can be shown in \ref{}.
+
+\begin{figure}
+    \vspace{2.5cm}
+    \caption{}
+    \label{fig:TwoTS}
+\end{figure}
+
+In \textsl{Child} blocks, after each level of path generation, each block will decide if overloaded. Then if so, block will copy tasks in its own \textsl{S_Queue} back to \textsl{G_Queue}. Then mark \textsl{Child_syn_needed} in order to make all other blocks enter the \textsl{Child level} tasks schedule. In our algorithm, the \textsl{Child level} tasks schedule will balance the tasks among all blocks by build new \textsl{V_G_Queue}. This behavior has no reference to \textsl{Parent}. Here, in order to make each block has enough resource to do future expanding, the schedule should not make the new tasks in each block exceed a \textsl{threshold}, Or the algorithm will conclude that the \textsl{Child} is overloaded.
+ 
+Then it will come to \textsl{Parent level} task schedule. \textsl{Parent} will calculate new \textsl{Childsize-Child blocks number}, build new \textsl{V_G_Queue} and calculate tasks offset for each \textsl{Child block}. Here it also comes to the problem that if \textsl{Childsize} is not appropriate, then the \textsl{Child} will return to \textsl{Parent} frequently, which is costly. To make a compromise, in operation line X in our algorithm, when calculating the \textsl{Childsize}, we guarantee that tasks allocated to each Child should not beyond the number $\textsl{warpsize = 32}$ and the threads number in each \textsl{Child block} should be $warpsize\times\alpha$. 
 %
-\subsection{Two-level Path Recording}
+\subsection{Two-level Path Recording and Intra SM Duplicate Elimination}
 %
+Our algorithm is to deal with the Path Generation so as to get Counterexample. So path recording is necessary. Our path generation  
 task queue: just ID queue, change gnode to just contain a id and a queue.
 Build node pool in shared memory, just record one path in each node, use atomic operation, but won't block. when overload, append back to Global memory node pool.
 %
