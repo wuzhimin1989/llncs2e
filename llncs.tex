@@ -230,7 +230,7 @@ To deal with these problems. Our solution to CUDA Counterexample Generation is t
     \item We utilize the CUDA Dynamic Parallelism to dynamically fork Child threads to fit the changing of tasks. We build a dynamic Parent-Child relationship.
     \item We build a Three-Level Queue Management proposal to fit the dynamic parallelism and dynamic task expanding.The three-level is made up of two physical level and a virtual level.
     \item We build a Two-level Dynamic Task Schedule to fit the dynamic Parent-Child relationship control and load balance.
-    \item We utilize the hierarchical Memory in GPU to do the Two-Level Path Recording and intra SM duplicate elimination.
+    \item We utilize the hierarchical Memory in GPU to do the Two-Level Path Recording and duplicate elimination to some extent.
 \end{itemize}
 We present the design of our algorithm in Algorithm 1, Algorithm 2 and Algorithm 3: Algorithm 1 propose the \textsl{CudaParentPathGeneration} Algorithm. It is the kernel launched by host.
 It contains the initial steps of Path Generation and will finish a certain amount of BFS-related tasks. It major focus on the Parent-level task schedule, Queue Management, fork
@@ -456,9 +456,42 @@ In \textsl{Child} blocks, after each level of path generation, each block will d
  
 Then it will come to \textsl{Parent level} task schedule. \textsl{Parent} will calculate new \textsl{Childsize-Child blocks number}, build new \textsl{V_G_Queue} and calculate tasks offset for each \textsl{Child block}. Here it also comes to the problem that if \textsl{Childsize} is not appropriate, then the \textsl{Child} will return to \textsl{Parent} frequently, which is costly. To make a compromise, in operation line X in our algorithm, when calculating the \textsl{Childsize}, we guarantee that tasks allocated to each Child should not beyond the number $\textsl{warpsize = 32}$ and the threads number in each \textsl{Child block} should be $warpsize\times\alpha$. 
 %
-\subsection{Two-level Path Recording and Intra SM Duplicate Elimination}
+\subsection{Two-level Path Recording and Duplicate Elimination}
 %
-Our algorithm is to deal with the Path Generation so as to get Counterexample. So path recording is necessary. Our path generation  
+Our algorithm is to deal with the Path Generation so as to get Counterexample. So path recording is necessary. Since the path generation is a BFS-related work, the path record is updated in each search level. Take \ref{} as an example, the nodes in each level will inherit their precusor's path and then add themselves in the path. When a node has more than one precursor, it will inherit more than one path. However, our algorithm is to find a path to reach $SCC\/ACCnodelist$, only to inherit one path is enough and this will save the storage space. Then we build the Path Recording scheme according to this and also the dynamic parallelism feature inclued in all other parts.
+
+\begin{figure}
+	\vspace{2.5cm}
+	\caption{}
+	\label{fig:PathRExp}
+\end{figure}
+
+We call our scheme \textsl{Two-level Path Recording}. One is Shared Memory level path recording and the other is Global Memory level. Firstly, a simple structure is defined:
+
+\begin{center} $PathRecordNode{nodeid, pathqueue}$\end{center}
+
+Then we define a \textsl{PathRecordNodeList} array in each block that stored in Shared Memory (called \textsl{S_PRN_List}) and one more array in Global Memory (called \textsl{G_PRN_List}. On a whole, during the path generation, threads will update the path in corresponding node in Shared Memory following the inherit rules mentioned. And the updating of path in Global Memory happens when the overload happens in order to fit the dynamic tasks schedule design previously mentioned. In details, take \ref{} as an example:
+
+\begin{figure}
+	\vspace{2.5cm}
+	\caption{}
+	\label{fig:pathrecexplain}
+\end{figure}
+
+Based on \ref{}, the steps to do the path recording are as follows, all these steps are executed after the \textsl{IfReachSCC\&ACC} detection:
+
+\begin{itemize}
+	\item{when a node is being visited, update the corresponding PathRecordNode in the \textsl{S_PRN_List} by push itself to the path} 
+	\item{when a node is being visited, copy its updated path to each of its successor's corresponding path queue If it is empty. If not, it means the successor has inherit a path and there is no need to inherit another path. Here, it also means the successor has been put into task queue and it can eliminate the duplication inside a block to some extent}
+	\item{when overload happen, we do the path copy together with copy tasks from \textsl{S_Queue} to \textsl{G_Queue}. Only the path data that with ID contained in \textsl{S_Queue} are copied. Here, with the same rule, if the corresponding \textsl{PathRecordNode} has unempty path queue, the copy operation will be aborted and this node ID will also be aborted in task copy.} 
+	\item{these steps continue until \textsl{IfSCC\/ACCReach} detection return TRUE.}
+\end{itemize}
+
+Here, the reason we say it can just eliminate duplication to some extent is that after once \textsl{S_PRN_List \Rightarrow G_PRN_List} copy, All path queue in \textsl{S_PRN_List} will be empty. So in following steps, the visited node may have possibility to be visited again and it will store the path again. But when copy back to \textsl{G_PRN_Queue}, this will be detected. 
+Another problem is the storage space problem, in worst case, the structure our algorithm work on is a binary tree, then totally cost around 8KB. 
+
+
+On the whole, 
 task queue: just ID queue, change gnode to just contain a id and a queue.
 Build node pool in shared memory, just record one path in each node, use atomic operation, but won't block. when overload, append back to Global memory node pool.
 %
@@ -468,12 +501,7 @@ deduce syn number, latency detection, just use the global _G_... to mark if need
 %
 \section{Implementation of Algorithm in PAT}
 %
-%
-\subsection{Data Preprocessing in PAT}
-%
-%
-\subsection{Algorithm Implementation}
-%
+
 %
 \section{Experiments and Evaluation}
 
