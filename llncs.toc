@@ -1,0 +1,16 @@
+\contentsline {chapter}{Hamiltonian Mechanics}{0}
+\contentsline {title}{H}{1}
+\authcount {2}
+\contentsline {author}{Zhimin Wu\unskip {} \and Yang Liu\unskip {}}{1}
+\contentsline {section}{\numberline {1}Introduction}{1}
+\contentsline {section}{\numberline {2}Counterexample Generation in LTL Model Checking}{1}
+\contentsline {section}{\numberline {3}GPU Architecture and CUDA Dynamic Parallelism}{1}
+\contentsline {section}{\numberline {4}CUDA Counterexample Generation}{1}
+\contentsline {subsection}{\numberline {4.1}CUDA Dynamic Path Generation Algorithm}{1}
+\contentsline {subsection}{\numberline {4.2}Dynamic Parent-Child Relationship}{3}
+\contentsline {subsection}{\numberline {4.3}Dynamic Three-level Queue Management}{3}
+\contentsline {subsection}{\numberline {4.4}Dynamic Two-level Task Schedule}{6}
+\contentsline {subsection}{\numberline {4.5}Two-level Path Recording and Duplicate Elimination}{11}
+\contentsline {subsection}{\numberline {4.6}Synchronization and Atomic Operation}{13}
+\contentsline {section}{\numberline {5}Implementation of Algorithm in PAT}{14}
+\contentsline {section}{\numberline {6}Experiments and Evaluation}{14}
