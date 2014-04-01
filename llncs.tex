@@ -296,12 +296,12 @@ As we mentioned in \ref{sec:sec3}, the architecture of Memory in GPU contains Gl
 
 The first level queue is stored in Shared Memory, marked as \textsl{S\_Queue}, It is shared among blocks in 1 SM. The second level queue is stored in Global Memory, marked as \textsl{G\_Queue}. The third level queue is also stored in Global Memory, called Virtual Global Queue, marked as \textsl{V\_G\_Queue}.
 
-\textsl{S\_Queue} is the first task storage queue. When the BFS-related path generation begin, the expanded node ID will firstly be pushed into the \textsl{S\_Queue} in corresponding SM. Then for the next level expanding, threads do not need to visit Global Memory, it improve the data access speed. Here, the problem is it may cause read\/write conflict when parallel threads write/read at the same time. Then if we set lock or use atomic operation to prevent conflict, it will cost much with frequently write request at the same time. So based on the GPU SM architecture and new Warp schedule in GK110,we build the lock-free \textsl{S\_Queue} in structure showed in \ref{fig:SQueue}. As mentioned, the kernel is actually executed in groups of $32$ threads,called a \textsl{warp}. In GK110, it can support $4$ \textsl{warps} executing at the same time in reality. So for each block, we make the \textsl{S\_Queue} a four queue-group with $32$ queues each. So even the threads executed in a SM is much more than 4 \textsl{warps}, the number to write into queue at the same time is limited. \textsl{S\_Queue} is the queue directly accessed by threads during execution. As one thread only hold 1 task in each level search, if the tasks in \textsl{S\_Queue} exceed the number of threads executed in one block, the tasks should be re-scheduled and then it need to be transferred to \textsl{G\_Queue} in Global Memory.
+\textsl{S\_Queue} is the first task storage queue. When the BFS-related path generation begin, the expanded node ID will firstly be pushed into the \textsl{S\_Queue} in corresponding SM. Then for the next level expanding, threads do not need to visit Global Memory, it improve the data access speed. Here, the problem is it may cause read\/write conflict when parallel threads write/read at the same time. Then if we set lock or use atomic operation to prevent conflict, it will cost much with frequently write request at the same time. So based on the GPU SM architecture and new Warp schedule in $Kepler GK110$,we build the lock-free \textsl{S\_Queue} in structure showed in \ref{fig:SQueue}. As mentioned, the kernel is actually executed in groups of $32$ threads,called a \textsl{warp}. In $Kepler GK110$, it can support $4$ \textsl{warps} executing at the same time in reality. So for each block, we make the \textsl{S\_Queue} a four queue-group with $32$ queues each. So even the threads executed in a SM is much more than 4 \textsl{warps}, the number to write into queue at the same time is limited. \textsl{S\_Queue} is the queue directly accessed by threads during execution. As one thread only hold 1 task in each level search, if the tasks in \textsl{S\_Queue} exceed the number of threads executed in one block, the tasks should be re-scheduled and then it need to be transferred to \textsl{G\_Queue} in Global Memory.
 
 \begin{figure}
     %\vspace{2.5cm}
     \includegraphics[width=\textwidth]{SQueue.pdf}
-    \caption{}
+    \caption{Structure of S\_Queue}
     \label{fig:SQueue}
 \end{figure}
 
@@ -375,7 +375,7 @@ Then we define a \textsl{PathRecordNodeList} array in each block that stored in 
 
 Here, the reason we say it can just eliminate duplication to some extent is that after once \textsl{$S\_PRN\_List \Rightarrow G\_PRN\_List$} copy, All path queue in \textsl{$S\_PRN\_List$} will be empty. So in following steps, the visited node may have possibility to be visited again and it will store the path again. But when copy back to \textsl{G\_PRN\_Queue}, this will be detected.
 
-Another problem is the storage space problem. (need expanding)
+Another problem is the storage space problem. (need expanding, to be continued...)
 
 In addition, when a thread updating the path queue in \textsl{PathRecordNode}, atomic operation is needed to prevent conflict. And it should not block other threads. This will be discussed in the following part.
 %
