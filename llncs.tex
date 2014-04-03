@@ -7,8 +7,9 @@
 %
 \usepackage{fixltx2e}
 \usepackage{makeidx}  % allows for indexgeneration
-\usepackage{algorithm}
-\usepackage{algpseudocode}
+%\usepackage{algorithm}
+%\usepackage{algpseudocode}
+\usepackage[ruled,vlined]{algorithm2e}
 \usepackage{multirow}
 \usepackage{amsmath}
 \usepackage{xcolor}
@@ -93,17 +94,26 @@ The zhimin \dots
 \section{CUDA Counterexample Generation}
 %
 
-In this chapter, we will describe our CUDA Counterexample Generation proposal. The Key point of Counterexample Generation, as we mentioned, is a BFS-Related Path Generation work. The important properties of a parallel BFS contain the task queue management and the load balance during the search level by level. We take all these into consideration in our design. Based on the CUDA Dynamic Parallelism and GPU programming model, firstly, we propose the overall design of CUDA Counterexample Generation Algorithm. Then we explain in detail about the Two-Level Queue Management and Two-level Task Schedule in our design. Finally we propose the Path Record during the search of counterexample.
+In this chapter, we will describe our CUDA Counterexample Generation proposal. The target of our design is to accelerate the Path Generation procedure in Counterexample generation by parallel the procedure in GPU, which is a parallel BFS-Related work. The important properties of BFS is that the node number in each level is changing. So in parallel BFS program, the tasks size is not consistent, which makes the task queue management and the load balance during the search important. These are all being taken into consideration in our design. Our design is based on the CUDA Dynamic Parallelism and Kepler GK110 Architecture, as well as the programming model. Firstly, we propose the overall design of CUDA Counterexample Generation Algorithm. Then we explain in detail about the Two-Level Queue Management and Two-level Task Schedule in our design. Finally we propose the Path Record during the Path Generation.
 
 %
 \subsection{CUDA Dynamic Path Generation Algorithm}
 %
 
-The original Counterexample Generation algorithm is shown in \ref{}. To design the CUDA Counterexample Generation proposal, we should focus on the key point, which means CUDA accelerated BFS-related algorithm in GPU. In normal CUDA program, host will call the kernel to run in GPU with static grid and block structure. And in the previous research CUDA IIIT-BFS \cite{}, it need to launch the kernel each time when a level of the graph is explored, which is costly and slower than CPU-BFS. To deal with this problem, research CUDA UIUC-BFS \cite{} propose a hierarchical memory management proposal. It build three level queue for BFS to avoid consequently launch kernel, which result in a certain speedup. But it is still a static method that can not adjust according to the task size; and there is no load balance plan in it. In addition, the above research does not focus on model checking.
+The original Counterexample Generation algorithm is shown in \ref{}. Our design is to build the general Path Generation Algorithm to accelerate the \textsl{Path} and \textsl{FindshortestPathtoSCC\&Acc} in the original algorithm. The overall scheme can be shown in \ref{fig:Overall}.
+
+\begin{figure}[htbp]
+	%\vspace{2.5cm}
+	\includegraphics[width=\textwidth]{Overall.eps}
+    \caption{Overall Design}
+    \label{fig:Overall}
+\end{figure}
+	
+In normal CUDA program, host will call the kernel to run in GPU with static grid and block structure. And in the previous research CUDA IIIT-BFS \cite{}, it need to launch the kernel each time when a level of the graph is explored, which is costly and slower than CPU-BFS. To deal with this problem, research CUDA UIUC-BFS \cite{} propose a hierarchical memory management proposal. It build three level queue for BFS to avoid consequently launch kernel, which result in a certain speedup. But it is still a static method that can not adjust according to the task size; and there is no load balance plan in it. In addition, the above research does not focus on model checking.
 
 There is also some research on BFS-Related CUDA accelerated model checking algorithms.(to be continued...)
 
-To deal with these problems. Our solution to CUDA Counterexample Generation is to utilizes new features of CUDA, new GPU architecture and refers to some previous research to do our own expanding. Then we got a new CUDA Path Generation Algorithm to replace the XXX\ref{} in original Counterexample Generation algorithm \ref{}. Totally Speaking, the feature we focus on is he amount of tasks during the execution of BFS is dynamically changing. Our algorithm contains four parts:
+To deal with these problems. Our solution to CUDA Counterexample Generation is to utilizes Dynamic Parallelism of CUDA and features of GPU GK110 architecture. Then we got a new CUDA Dynamic Path Generation Algorithm shown in\ref{}. Totally Speaking, the feature we focus on is he amount of tasks during the execution of BFS is dynamically changing. Our algorithm contains four parts:
 
 \begin{itemize}
     \item We utilize the CUDA Dynamic Parallelism to dynamically fork Child threads to fit the changing of tasks. We build a dynamic Parent-Child relationship.
@@ -112,10 +122,10 @@ To deal with these problems. Our solution to CUDA Counterexample Generation is t
     \item We utilize the hierarchical Memory in GPU to do the Two-Level Path Recording and duplicate elimination to some extent.
 \end{itemize}
 
-We present the design of our algorithm in Algorithm $1$, Algorithm $2$ and Algorithm $3$: Algorithm \ref{alg:PGpath} propose the \textsl{CudaParentPathGeneration} Algorithm. It is the kernel launched by host.It contains the initial steps of Path Generation and will finish a certain amount of BFS-related tasks. It major focus on the Parent-level task schedule, Queue Management, fork Child-threads and distributed tasks to them. It controls the Parent-Child Relationship during the execution. Line X to Line X is
+We present the pseudo-code of our algorithm in Algorithm $1$, Algorithm $2$ and Algorithm $3$: Algorithm \ref{alg:PGpath} propose the \textsl{CudaParentPathGeneration} Algorithm. It is the kernel launched by host.It contains the initial steps of Path Generation and will finish a certain amount of BFS-related tasks. It major focus on the Parent-level task schedule, Queue Management, fork Child-threads and distributed tasks to them. It controls the Parent-Child Relationship during the execution. Line X to Line X is
 
             %algorithm1
-			\begin{algorithm}[ht]
+			\begin{algorithm}[htbp]
 			%\fontsize{9pt}{9pt}\selectfont
 			\caption{CudaParentPathGeneration Algorithm}
 			\label{alg:PGpath}
@@ -157,7 +167,7 @@ We present the design of our algorithm in Algorithm $1$, Algorithm $2$ and Algor
 	                  \State $Two-levelTS: ParellelCal(Child\_Tasks\_Offset\_V\_G\_Queue);$
                 \EndIf
 	            \If{$inblockthreadindex = 0$}
-		              \State $ChildKernel<<<…>>>(V\_G\_Queue,Child\_Tasks\_Offset,...);$
+		              \State $ChildKernel<<<...>>>(V\_G\_Queue,Child\_Tasks\_Offset,...);$
                       \State $CudaDeviceSyn():If Childs NOT fit tasks OR finished, return to Parent;$
                       \State $Then Continue loop:Two-levelTS:Parent Reschedule tasks, Child re-expanding;$
                 \EndIf
@@ -169,7 +179,7 @@ We present the design of our algorithm in Algorithm $1$, Algorithm $2$ and Algor
 Algorithm \ref{alg:CGpath} propose the \textsl{CudaChildPathGeneration} Algorithm. It is the kernel launched by parent thread, regarded as Child kernel. It will finish the major tasks of Path Generation. It contains the Child-level Queue Management, Child-level task schedule and maintain the Parent-Child Relationship during the execution. Line X
 
             %algorithm2
-            \begin{algorithm}[ht]
+            \begin{algorithm}[htbp]
             \caption{CudaChildPathGeneration Algorithm}
             \label{alg:CGpath}
             \begin{algorithmic}[1]
@@ -188,7 +198,7 @@ Algorithm \ref{alg:CGpath} propose the \textsl{CudaChildPathGeneration} Algorith
             \EndIf
             \State $CudaInterBlockSyn();$
             \While{$!G_IfSCC\&AccReach AND !Child\_need\_back2parent$}
-	            \State $BlockTasks := Tasksoffsets[blockindex + 1] – Taskoffsets[blockindex];$
+	            \State $BlockTasks := Tasksoffsets[blockindex + 1] - Taskoffsets[blockindex];$
 	            \State $Three-levelQM: Enqueue(Getthreadtask FROM V\_G\_Queue);$
                 \State $Queuesize \Leftarrow blocktasks.num;$
                 \State $Intra\_block\_syn();$
@@ -233,7 +243,7 @@ Algorithm \ref{alg:CGpath} propose the \textsl{CudaChildPathGeneration} Algorith
 Algorithm \ref{alg:Algmulti} propose the \textsl{CudaQuicksort},\textsl{Scc\&AccReach} and \textsl{CudaBlocksSyn} Algorithm. \textsl{CudaQuicksort} algorithm utilize the Dynamic Parallelism feature of CUDA to do quick sort for SCC node list.This refer to \ref{}. \textsl{Scc\&AccReach} use the Binary search to find if the path generation execution has reached SCC. \textsl{CudaInterBlocksSyn} Algorithm refers to the algorithm mentioned in \ref{}. It choose the \textsl{simple\_blocks\_synchronize} when the number of blocks is small. And the \textsl{tree\_blocks\_synchronize} is for large number of blocks.
 
             %algorithm 3
-            \begin{algorithm}[ht]
+            \begin{algorithm}[htbp]
             \caption{CudaQuicksort, Scc\&AccReach and CudaInterBlocksSyn Algorithm}
             \label{alg:Algmulti}
             \begin{algorithmic}[1]
@@ -271,9 +281,9 @@ Data-dependent parallel work can be generated inline with CUDA Dynamic Paralleli
 
 We show the relationship in \ref{fig:PCRelation}, The \textsl{Parent-Child} relationship is not static. when \textsl{Parent} launch \textsl{Child}, it will base on the current tasks to decide the structure of \textsl{Child}, the future tasks can not be forecasted but it is certainly that \textsl{Parent} should not set a very huge \textsl{Child} grid to prevent task overload. So in most case, \textsl{Parent-Child} relationship is dynamically adjusted. In our algorithm, when the total tasks overload in \textsl{Child},it should return to \textsl{Parent} for reallocating(shown in \ref()). However, launch \textsl{Child} for a lot of time is also costly. so we should make a compromise.It will be mentioned in the Dynamic Two-level Task Schedule part.
 
-\begin{figure}
+\begin{figure}[htbp]
     %\vspace{2.5cm}
-    \includegraphics[width=\textwidth]{PCRelation.pdf}
+    \includegraphics[width=\textwidth]{PCRelation.eps}
     \caption{Parent-Child Relationship}
     \label{fig:PCRelation}
 \end{figure}
@@ -287,9 +297,9 @@ In total, The \textsl{Parent-Child} relationship is dynamic according to the tas
 
 As we mentioned in \ref{sec:sec3}, the architecture of Memory in GPU contains Global memory and Shared Memory. Global memory can be read\/write by all blocks running in all SM and Shared Memory is just available to blocks in same SM. Read\/Write operation in Shared Memory cost much less than operation in Global Memory. We should utilize this feature to improve the performance of our algorithm. But the size of shared memory is much lower than Global Memory. For our algorithm that refer to huge data size, we can not get rid of visiting Global memory. Considering the point in dynamic parallelism that only when tasks overload then call Child, we build a dynamic hierarchical Queue to utilize the hierarchical memory. In order to fit our dynamic parallelism design, we build a Three-Level Queue Management scheme. The structure can be shown in \ref{fig:DQM}
 
-\begin{figure}
+\begin{figure}[htbp]
     %\vspace{2.5cm}
-    \includegraphics[width=\textwidth]{DQM.pdf}
+    \includegraphics[width=\textwidth]{DQM.eps}
     \caption{Dynamic Three-level Queue Structure}
     \label{fig:DQM}
 \end{figure}
@@ -298,28 +308,28 @@ The first level queue is stored in Shared Memory, marked as \textsl{S\_Queue}, I
 
 \textsl{S\_Queue} is the first task storage queue. When the BFS-related path generation begin, the expanded node ID will firstly be pushed into the \textsl{S\_Queue} in corresponding SM. Then for the next level expanding, threads do not need to visit Global Memory, it improve the data access speed. Here, the problem is it may cause read\/write conflict when parallel threads write/read at the same time. Then if we set lock or use atomic operation to prevent conflict, it will cost much with frequently write request at the same time. So based on the GPU SM architecture and new Warp schedule in $Kepler GK110$,we build the lock-free \textsl{S\_Queue} in structure showed in \ref{fig:SQueue}. As mentioned, the kernel is actually executed in groups of $32$ threads,called a \textsl{warp}. In $Kepler GK110$, it can support $4$ \textsl{warps} executing at the same time in reality. So for each block, we make the \textsl{S\_Queue} a four queue-group with $32$ queues each. So even the threads executed in a SM is much more than 4 \textsl{warps}, the number to write into queue at the same time is limited. \textsl{S\_Queue} is the queue directly accessed by threads during execution. As one thread only hold 1 task in each level search, if the tasks in \textsl{S\_Queue} exceed the number of threads executed in one block, the tasks should be re-scheduled and then it need to be transferred to \textsl{G\_Queue} in Global Memory.
 
-\begin{figure}
+\begin{figure}[htbp]
     %\vspace{2.5cm}
-    \includegraphics[width=\textwidth]{SQueue.pdf}
+    \includegraphics[width=\textwidth]{SQueue.eps}
     \caption{Structure of S\_Queue}
     \label{fig:SQueue}
 \end{figure}
 
 \textsl{G\_Queue} is build at the first time \textsl{Parent} call \textsl{Child}, it is a group of array. As dynamic allocate memeory and visit global memory is costly, this queue won't change after being build. As Global Memory is the way \textsl{Parent} communicate with \textsl{Child},it work as the way to transfer tasks to \textsl{Child} when the first time launching \textsl{Child}. Then in following execution, it stores the tasks when blocks overload and copy the content in \textsl{S\_Queue} to it. It is only visible for writing and \textsl{Child} threads will never directly read from it. The way to write \textsl{G\_Queue} is shown in \ref{fig:GQueue}.
 
-\begin{figure}
+\begin{figure}[htbp]
 	%\vspace{2.5cm}
-    \includegraphics[width=\textwidth]{GQueue.pdf}
-	\caption{}
+    \includegraphics[width=\textwidth]{GQueue.eps}
+	\caption{Structure of G\_Queue}
 	\label{fig:GQueue}
 \end{figure}
 
 The Virtual Global Queue is the third level and it is a pointer array. As shown in \ref{flg:VGQueue}, in global view, the tasks store in the \textsl{G\_Queue} is not continuous. So it is not convenient for tasks reschedule as it will request a lot of computing on the task range for each thread. Then \textsl{V\_G\_Queue} is to build a continuous list for task schedule. It is only visible for reading by threads. And only \textsl{V\_G\_Queue} is dynamic built during execution. It can be shown in \ref{fig:VGQueue}.
 
-\begin{figure}
+\begin{figure}[htbp]
 	%\vspace{2.5cm}
-    \includegraphics[width=\textwidth]{VGQueue.pdf}
-	\caption{}
+    \includegraphics[width=\textwidth]{VGQueue.eps}
+	\caption{Structure of V\_G\_Queue}
 	\label{fig:VGQueue}
 \end{figure}
 
@@ -336,9 +346,9 @@ In previous sections, what we mentioned contains two conditions that program nee
 
 In this two conditions, tasks schedule is done by \textsl{Parent}. And launching kernel is an expensive work. If just one or a few blocks in \textsl{Child} is overloaded, it is obviously that the execution should not return to \textsl{Parent}. Instead, inside the \textsl{Child}, it should also have a \textsl{Child level inter blocks} task schedule. That, combined with the \textsl{Parent} level task schedule, we build the two-level task schedule. It can be shown in \ref{fig:TwoTS}.
 
-\begin{figure}
+\begin{figure}[htbp]
     %\vspace{2.5cm}
-    \includegraphics[width=\textwidth]{TwoTS.pdf}
+    \includegraphics[width=\textwidth]{TwoTS.eps}
     \caption{Dynamic Two-level Task Schedule}
     \label{fig:TwoTS}
 \end{figure}
@@ -353,10 +363,10 @@ Then it will come to \textsl{Parent level} task schedule. \textsl{Parent} will c
 
 Our algorithm is to deal with the Path Generation so as to get Counterexample. So path recording is necessary. Since the path generation is a BFS-related work, the path record is updated in each search level. Take \ref{fig:PathRExp} as an example, the nodes in each level will inherit their precusor's path and then add themselves in the path. When a node has more than one precursor, it will inherit more than one path. However, our algorithm is to find a path to reach $SCC\/ACCnodelist$, only to inherit one path is enough and this will save the storage space. Then we build the Path Recording scheme according to this and also the dynamic parallelism feature inclued in all other parts.
 
-\begin{figure}
+\begin{figure}[htbp]
 	%\vspace{2.5cm}
-    \includegraphics[width=\textwidth]{PathRExp.pdf}
-	\caption{}
+    \includegraphics[width=\textwidth]{PathRExp.eps}
+	\caption{Path Recording Example}
 	\label{fig:PathRExp}
 \end{figure}
 
@@ -385,7 +395,7 @@ In our algorithm, synchronization contains two parts: intra block synchronizatio
 
 Here we mention the atomic operation. It is used to build a unblock lock. When some threads want to write the same memory address at the same time, only the first one call the lock will get the access right and the other will abort their write operation and continue their executing. The design of this lock is shown in \ref{alg:atomiclock}
 
-\begin{algorithm}[t]
+\begin{algorithm}[htbp]
 \caption{Unblock lock with atomic operation}
 \label{alg:atomiclock}
 \begin{algorithmic}[1]
